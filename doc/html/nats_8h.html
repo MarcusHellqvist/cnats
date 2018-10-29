@@ -33,7 +33,7 @@
  <tr style="height: 56px;">
   <td id="projectalign" style="padding-left: 0.5em;" >
    <div id="projectname">NATS C Client with Streaming support
-   &#160;<span id="projectnumber">1.8.0-beta</span>
+   &#160;<span id="projectnumber">1.8.0</span>
    </div>
    <div id="projectbrief">The nats.io C Client, Supported by Synadia Communications Inc.</div>
   </td>
@@ -242,6 +242,9 @@ Functions</h2></td></tr>
 <tr class="memitem:gae75131e0ce4e5b89d0f82ea7892f112e"><td class="memItemLeft" align="right" valign="top"><a class="el" href="nats_8h.html#a3bc1b3fe7f64083e60c7c3b93f205bad">NATS_EXTERN</a> void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group__library_group.html#gae75131e0ce4e5b89d0f82ea7892f112e">nats_Close</a> (void)</td></tr>
 <tr class="memdesc:gae75131e0ce4e5b89d0f82ea7892f112e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Tear down the library.  <a href="group__library_group.html#gae75131e0ce4e5b89d0f82ea7892f112e">More...</a><br /></td></tr>
 <tr class="separator:gae75131e0ce4e5b89d0f82ea7892f112e"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:gaf75bb5b38bf32e6a8f43e54068625903"><td class="memItemLeft" align="right" valign="top"><a class="el" href="nats_8h.html#a3bc1b3fe7f64083e60c7c3b93f205bad">NATS_EXTERN</a> <a class="el" href="status_8h.html#a36c934157b663b7b5fb5d6609c897c80">natsStatus</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group__library_group.html#gaf75bb5b38bf32e6a8f43e54068625903">nats_CloseAndWait</a> (int64_t timeout)</td></tr>
+<tr class="memdesc:gaf75bb5b38bf32e6a8f43e54068625903"><td class="mdescLeft">&#160;</td><td class="mdescRight">Tear down the library and wait for all resources to be released.  <a href="group__library_group.html#gaf75bb5b38bf32e6a8f43e54068625903">More...</a><br /></td></tr>
+<tr class="separator:gaf75bb5b38bf32e6a8f43e54068625903"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ga0f7a5e105311800d957ae7b28d1ab752"><td class="memItemLeft" align="right" valign="top"><a class="el" href="nats_8h.html#a3bc1b3fe7f64083e60c7c3b93f205bad">NATS_EXTERN</a> const char *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group__status_group.html#ga0f7a5e105311800d957ae7b28d1ab752">natsStatus_GetText</a> (<a class="el" href="status_8h.html#a36c934157b663b7b5fb5d6609c897c80">natsStatus</a> s)</td></tr>
 <tr class="memdesc:ga0f7a5e105311800d957ae7b28d1ab752"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the text corresponding to a <a class="el" href="status_8h.html#a36c934157b663b7b5fb5d6609c897c80" title="Status returned by most of the APIs. ">natsStatus</a>.  <a href="group__status_group.html#ga0f7a5e105311800d957ae7b28d1ab752">More...</a><br /></td></tr>
 <tr class="separator:ga0f7a5e105311800d957ae7b28d1ab752"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -521,6 +524,9 @@ Functions</h2></td></tr>
 <tr class="memitem:gab6cfa9cb6857ae10f096a94f5e244e63"><td class="memItemLeft" align="right" valign="top"><a class="el" href="nats_8h.html#a3bc1b3fe7f64083e60c7c3b93f205bad">NATS_EXTERN</a> <a class="el" href="status_8h.html#a36c934157b663b7b5fb5d6609c897c80">natsStatus</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group__conn_mgt_group.html#gab6cfa9cb6857ae10f096a94f5e244e63">natsConnection_GetLastError</a> (<a class="el" href="group__types_group.html#gaf88dca0a18efb5c5e994d265a9f04aec">natsConnection</a> *nc, const char **lastError)</td></tr>
 <tr class="memdesc:gab6cfa9cb6857ae10f096a94f5e244e63"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the last connection error.  <a href="group__conn_mgt_group.html#gab6cfa9cb6857ae10f096a94f5e244e63">More...</a><br /></td></tr>
 <tr class="separator:gab6cfa9cb6857ae10f096a94f5e244e63"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ga747513ba6ab63fdf9a72bfc8025a14ba"><td class="memItemLeft" align="right" valign="top"><a class="el" href="nats_8h.html#a3bc1b3fe7f64083e60c7c3b93f205bad">NATS_EXTERN</a> <a class="el" href="status_8h.html#a36c934157b663b7b5fb5d6609c897c80">natsStatus</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group__conn_mgt_group.html#ga747513ba6ab63fdf9a72bfc8025a14ba">natsConnection_GetClientID</a> (<a class="el" href="group__types_group.html#gaf88dca0a18efb5c5e994d265a9f04aec">natsConnection</a> *nc, uint64_t *cid)</td></tr>
+<tr class="memdesc:ga747513ba6ab63fdf9a72bfc8025a14ba"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the current client ID assigned by the server.  <a href="group__conn_mgt_group.html#ga747513ba6ab63fdf9a72bfc8025a14ba">More...</a><br /></td></tr>
+<tr class="separator:ga747513ba6ab63fdf9a72bfc8025a14ba"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ga59bdc4ad9fea2053f5d3841f6b83f88b"><td class="memItemLeft" align="right" valign="top"><a class="el" href="nats_8h.html#a3bc1b3fe7f64083e60c7c3b93f205bad">NATS_EXTERN</a> <a class="el" href="status_8h.html#a36c934157b663b7b5fb5d6609c897c80">natsStatus</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group__conn_mgt_group.html#ga59bdc4ad9fea2053f5d3841f6b83f88b">natsConnection_Drain</a> (<a class="el" href="group__types_group.html#gaf88dca0a18efb5c5e994d265a9f04aec">natsConnection</a> *nc)</td></tr>
 <tr class="memdesc:ga59bdc4ad9fea2053f5d3841f6b83f88b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Drains the connection with default timeout.  <a href="group__conn_mgt_group.html#ga59bdc4ad9fea2053f5d3841f6b83f88b">More...</a><br /></td></tr>
 <tr class="separator:ga59bdc4ad9fea2053f5d3841f6b83f88b"><td class="memSeparator" colspan="2">&#160;</td></tr>

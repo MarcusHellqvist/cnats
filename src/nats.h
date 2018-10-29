@@ -508,13 +508,72 @@ nats_ReleaseThreadMemory(void);
  *
  * Releases memory used by the library.
  *
- * \note For this to take effect, all NATS objects that you have created
+ * For this to take effect, all NATS objects that you have created
  * must first be destroyed.
  *
+ * This call does not block and it is possible that the library
+ * is not unloaded right away if there are still internal threads referencing
+ * it, so calling #nats_Open() right away may fail. If you want to ensure
+ * that the library is fully unloaded, call #nats_CloseAndWait() instead.
+ *
+ * \note There are still a small number of thread local keys and a mutex
+ * that are not freed until the application exit (in which case a final cleanup
+ * is executed).
+ *
  * \warning You must not call #nats_Open and #nats_Close concurrently.
+ *
+ * @see nats_CloseAndWait()
  */
 NATS_EXTERN void
 nats_Close(void);
+
+/** \brief Tear down the library and wait for all resources to be released.
+ *
+ * Similar to #nats_Close() except that this call will make sure that all
+ * references to the library are decremented before returning (up to the
+ * given timeout). Internal threads (such as subscriptions dispatchers,
+ * etc..) hold a reference to the library. Only when all references have
+ * been released that this call will return. It means that you must call
+ * all the "destroy" calls before calling this function, otherwise it will
+ * block forever (or up to given timeout).
+ *
+ * For instance, this code would "deadlock":
+ * \code{.unparsed}
+ * natsConnection_ConnectTo(&nc, NATS_DEFAULT_URL);
+ * nats_CloseWait(0);
+ * natsConnection_Destroy(nc);
+ * \endcode
+ * But this would work as expected:
+ * \code{.unparsed}
+ * natsConnection_ConnectTo(&nc, NATS_DEFAULT_URL);
+ * natsConnection_Destroy(nc);
+ * nats_CloseWait(0);
+ * \endcode
+ * The library and other objects (such as connections, subscriptions, etc)
+ * use internal threads. After the destroy call, it is possible or even likely
+ * that some threads are still running, holding references to the library.
+ * Unlike #nats_Close(), which will simply ensure that the library is ultimately
+ * releasing memory, the #nats_CloseAndWait() API will ensure that all those internal
+ * threads have unrolled and that the memory used by the library is released before
+ * returning.
+ *
+ * \note If a timeout is specified, the call may return #NATS_TIMEOUT but the
+ * library is still being tear down and memory will be released. The error is just
+ * to notify you that the operation did not complete in the allotted time. Calling
+ * #nats_Open() in this case (or any implicit opening of the library) may result
+ * in an error since the library may still be in the process of being closed.
+ *
+ * \warning Due to the blocking nature it is illegal to call this from any
+ * NATS thread (such as message or connection callbacks). If trying to do so,
+ * a #NATS_ILLEGAL_STATE error will be returned.
+ *
+ * @see nats_Close()
+ *
+ * @param timeout the maximum time to wait for the library to be closed. If
+ * negative or 0, waits for as long as needed.
+ */
+NATS_EXTERN natsStatus
+nats_CloseAndWait(int64_t timeout);
 
 /** @} */ // end of libraryGroup
 
@@ -1962,7 +2021,7 @@ natsConnection_Buffered(natsConnection *nc);
  * call will fail with the status #NATS_CONNECTION_DISCONNECTED.
  *
  * If the connection is closed while this call is in progress, then the
- * status #CLOSED would be returned instead.
+ * status #NATS_CONN_STATUS_CLOSED would be returned instead.
  *
  * @param nc the pointer to the #natsConnection object.
  */
@@ -2092,6 +2151,22 @@ natsConnection_GetDiscoveredServers(natsConnection *nc, char ***servers, int *co
  */
 NATS_EXTERN natsStatus
 natsConnection_GetLastError(natsConnection *nc, const char **lastError);
+
+/** \brief Gets the current client ID assigned by the server.
+ *
+ * Returns the client ID assigned by the server to which the client is
+ * currently connected to.
+ *
+ * \note The value may change if the client reconnects.
+ *
+ * This function returns #NATS_NO_SERVER_SUPPORT if the server's version
+ * is less than 1.2.0.
+ *
+ * @param nc the pointer to the #natsConnection object.
+ * @param cid the location where to store the client ID.
+ */
+NATS_EXTERN natsStatus
+natsConnection_GetClientID(natsConnection *nc, uint64_t *cid);
 
 /** \brief Drains the connection with default timeout.
  *
@@ -2745,6 +2820,11 @@ natsSubscription_Destroy(natsSubscription *sub);
  * changes made to the `options` will not have an effect to this connection.
  * The `options` can however be changed prior to be passed to another
  * #stanConnection_Connect() call if desired.
+ *
+ * \note The Streaming connection does not honor the NATS Connection option
+ * #natsOptions_SetRetryOnFailedConnect(). If you pass NATS Options with
+ * this option enabled, no error is returned, but if the connection cannot
+ * be established "right away", the connect call will return an error.
  *
  * @see #stanConnOptions
  * @see #stanConnection_Destroy()

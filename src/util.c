@@ -260,12 +260,51 @@ _jsonGetStr(char **ptr, char **value)
 {
     char *p = *ptr;
 
-    do
+    while ((*p != '\0') && (*p != '"'))
     {
-        while ((*p != '\0') && (*p != '"'))
-            p += 1;
+        if ((*p == '\\') && (*(p + 1) != '\0'))
+        {
+            p++;
+            // based on what http://www.json.org/ says a string should be
+            switch (*p)
+            {
+                case '"':
+                case '\\':
+                case '/':
+                case 'b':
+                case 'n':
+                case 'r':
+                case 't':
+                    break;
+                case 'u':
+                {
+                    int i;
+
+                    // Needs to be 4 hex. A hex is a digit or AF, af
+                    p++;
+                    for (i=0; i<4; i++)
+                    {
+                        // digit range
+                        if (((*p >= '0') && (*p <= '9'))
+                                || ((*p >= 'A') && (*p <= 'F'))
+                                || ((*p >= 'a') && (*p <= 'f')))
+                        {
+                            p++;
+                        }
+                        else
+                        {
+                            return nats_setError(NATS_INVALID_ARG, "%s", "error parsing string: invalid unicode character");
+                        }
+                    }
+                    p--;
+                    break;
+                }
+                default:
+                    return nats_setError(NATS_INVALID_ARG, "%s", "error parsing string: invalid control character");
+            }
+        }
+        p++;
     }
-    while ((*p != '\0') && (*p == '"') && (*(p - 1) == '\\') && (p += 1));
 
     if (*p != '\0')
     {
@@ -739,6 +778,7 @@ nats_JSONGetValue(nats_JSON *json, const char *fieldName, int fieldType, void **
         case TYPE_BOOL:     (*(bool*)addr) = field->value.vbool;                break;
         case TYPE_INT:      (*(int*)addr) = (int)field->value.vdec;             break;
         case TYPE_LONG:     (*(int64_t*)addr) = (int64_t) field->value.vdec;    break;
+        case TYPE_ULONG:    (*(uint64_t*)addr) = (uint64_t) field->value.vdec;  break;
         case TYPE_DOUBLE:   (*(long double*)addr) = field->value.vdec;          break;
         default:
         {

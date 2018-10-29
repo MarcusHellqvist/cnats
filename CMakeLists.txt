@@ -19,6 +19,7 @@ option(NATS_BUILD_LIBUV_EXAMPLE "Build libuv examples" OFF)
 option(NATS_BUILD_LIBEVENT_EXAMPLE "Build libevent examples" OFF)
 option(NATS_BUILD_STATIC_EXAMPLES "Statically link examples" OFF)
 option(NATS_BUILD_STREAMING "Build NATS Streaming" ON)
+option(NATS_BUILD_NO_PREFIX_CONNSTS "No prefix for connection status enum" OFF)
 
 if(NATS_BUILD_WITH_TLS)
   find_package(OpenSSL REQUIRED)
@@ -35,11 +36,20 @@ if(NATS_BUILD_STREAMING)
   set(NATS_DOC_PROJECT_NAME "NATS C Client with Streaming support")
 endif(NATS_BUILD_STREAMING)
 
+if(NATS_BUILD_NO_PREFIX_CONNSTS)
+  add_definitions(-DNATS_CONN_STATUS_NO_PREFIX)
+endif(NATS_BUILD_NO_PREFIX_CONNSTS)
+
 # Platform specific settings
 if(UNIX)
   #---------------------------------------------------------------------------
   # Define NATS cache variables that override the CMAKE and MEMCHECK variables
   #---------------------------------------------------------------------------
+  include(GNUInstallDirs)
+
+  set(NATS_LIBDIR ${CMAKE_INSTALL_LIBDIR})
+  set(NATS_INCLUDE_DIR ${CMAKE_INSTALL_INCLUDEDIR})
+
   set(NATS_BUILD_TYPE Release CACHE STRING "Build type: Release, Debug, RelWithDebInfo, MinRelSize")
   set(CMAKE_BUILD_TYPE ${NATS_BUILD_TYPE} CACHE INTERNAL "")
 
@@ -90,6 +100,8 @@ if(UNIX)
   endif(${NATS_BUILD_ARCH} MATCHES "32")
   
 elseif(WIN32)
+  set(NATS_LIBDIR "lib")
+  set(NATS_INCLUDE_DIR "include")
   set(NATS_EXTRA_LIB "Ws2_32")
   set(NATS_OS "_WIN32")
   set(NATS_PLATFORM_INCLUDE "win")
@@ -117,32 +129,17 @@ if(NATS_BUILD_WITH_TLS)
 endif(NATS_BUILD_WITH_TLS)
 
 
-#---------------------------------------------------------------------
-# Add to the 'clean' target the list (and location) of files to remove
-
-list(APPEND NATS_INSTALLED_FILES "${CMAKE_INSTALL_PREFIX}/include/nats.h")
-list(APPEND NATS_INSTALLED_FILES "${CMAKE_INSTALL_PREFIX}/include/nats/nats.h")
-list(APPEND NATS_INSTALLED_FILES "${CMAKE_INSTALL_PREFIX}/include/nats/status.h")
-list(APPEND NATS_INSTALLED_FILES "${CMAKE_INSTALL_PREFIX}/include/nats/version.h")
-list(APPEND NATS_INSTALLED_FILES "${CMAKE_INSTALL_PREFIX}/include/nats/adapters/libevent.h")
-list(APPEND NATS_INSTALLED_FILES "${CMAKE_INSTALL_PREFIX}/include/nats/adapters/libuv.h")
-list(APPEND NATS_INSTALLED_FILES "${CMAKE_INSTALL_PREFIX}/lib/libnats${CMAKE_SHARED_LIBRARY_SUFFIX}")
-list(APPEND NATS_INSTALLED_FILES "${CMAKE_INSTALL_PREFIX}/lib/libnats_static${CMAKE_STATIC_LIBRARY_SUFFIX}")
-
-set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES "${NATS_INSTALLED_FILES}")
-#---------------------------------------------------------------------
-
-if(NATS_UPDATE_VERSION OR NATS_UPDATE_DOC)
 #------------
 # Versionning and Doc
 
 set(NATS_VERSION_MAJOR  1)
 set(NATS_VERSION_MINOR  8)
 set(NATS_VERSION_PATCH  0)
-set(NATS_VERSION_SUFFIX "-beta")
+set(NATS_VERSION_SUFFIX "")
 
 set(NATS_VERSION_REQUIRED_NUMBER 0x010100)
 
+if(NATS_UPDATE_VERSION OR NATS_UPDATE_DOC)
 configure_file(
 	${CMAKE_CURRENT_SOURCE_DIR}/src/version.h.in
 	${CMAKE_CURRENT_SOURCE_DIR}/src/version.h
@@ -152,8 +149,8 @@ configure_file(
 	${CMAKE_SOURCE_DIR}/doc/DoxyFile.NATS.Client.in
 	${CMAKE_SOURCE_DIR}/doc/DoxyFile.NATS.Client
 	@ONLY)
-#------------
 endif(NATS_UPDATE_VERSION OR NATS_UPDATE_DOC)
+#------------
 
 #----------------------------
 # Add the project directories

@@ -1,5 +1,6 @@
 Version
 VersionMatchesTag
+OpenCloseAndWait
 natsNowAndSleep
 natsAllocSprintf
 natsStrCaseStr
@@ -79,6 +80,7 @@ AsyncSubscribeTimeout
 SyncSubscribe
 PubSubWithReply
 Flush
+ConnCloseDoesFlush
 QueueSubscriber
 ReplyArg
 SyncReplyArg
@@ -121,6 +123,7 @@ NoEcho
 NoEchoOldServer
 DrainSub
 DrainConn
+GetClientID
 SSLBasic
 SSLVerify
 SSLVerifyHostname
@@ -163,3 +166,5 @@ StanSubscriptionAckMsg
 StanPings
 StanPingsUnblockPublishCalls
 StanGetNATSConnection
+StanNoRetryOnFailedConnect
+StanInternalSubsNotPooled
