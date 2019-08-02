@@ -3684,7 +3684,7 @@ _checkStart(const char *url, int orderIP, int maxAttempts)
     natsSock_Init(&ctx);
     ctx.orderIP = orderIP;
 
-    natsDeadline_Init(&(ctx.deadline), 2000);
+    natsDeadline_Init(&(ctx.writeDeadline), 2000);
 
     s = natsUrl_Create(&nUrl, url);
     if (s == NATS_OK)
@@ -4326,7 +4326,7 @@ _waitForConnClosed(struct threadArg *arg)
 
     natsMutex_Lock(arg->m);
     while ((s != NATS_TIMEOUT) && !arg->closed)
-        s = natsCondition_TimedWait(arg->c, arg->m, 2000);
+        s = natsCondition_TimedWait(arg->c, arg->m, 3000);
     arg->closed = false;
     natsMutex_Unlock(arg->m);
 
@@ -8042,13 +8042,19 @@ _errorHandler(natsConnection *nc, natsSubscription *sub, natsStatus err, void *c
     const char       *lastError = NULL;
 
     natsMutex_Lock(args->m);
-    if ((err == NATS_NOT_PERMITTED)
-        && (natsConnection_GetLastError(nc, &lastError) == NATS_NOT_PERMITTED)
-        && (nats_strcasestr(lastError, args->string) != NULL))
+    if (err == NATS_NOT_PERMITTED)
     {
-        args->results[0]++;
-        args->done = true;
-        natsCondition_Broadcast(args->c);
+        // Since error handler is async, there is no guarantee that
+        // accessing conn's last error will return NATS_NOT_PERMITTED.
+        // Only if it does, then check that text is as expected.
+        natsStatus s = natsConnection_GetLastError(nc, &lastError);
+        if ((s != NATS_NOT_PERMITTED)
+                || (nats_strcasestr(lastError, args->string) != NULL))
+        {
+            args->results[0]++;
+            args->done = true;
+            natsCondition_Broadcast(args->c);
+        }
     }
     natsMutex_Unlock(args->m);
 }
@@ -8300,6 +8306,9 @@ _startServerSendErrThread(void *closure)
                 {
                     snprintf(buffer, sizeof(buffer), "-ERR '%s'\r\n", arg->string);
                     s = natsSock_WriteFully(&ctx, buffer, (int)strlen(buffer));
+#ifdef _WIN32
+                    nats_Sleep(100);
+#endif
                 }
                 else
                 {
@@ -8363,7 +8372,7 @@ test_AuthenticationExpired(void)
         // Wait for server to be ready
         natsMutex_Lock(arg.m);
         while ((s != NATS_TIMEOUT) && (arg.status != NATS_OK))
-            s = natsCondition_TimedWait(arg.c, arg.m, 2000);
+            s = natsCondition_TimedWait(arg.c, arg.m, 3000);
         if (s == NATS_OK)
             s = arg.status;
         natsMutex_Unlock(arg.m);
@@ -8415,7 +8424,7 @@ test_AuthenticationExpired(void)
     test("Should receive an ERR: ");
     natsMutex_Lock(arg.m);
     while ((s != NATS_TIMEOUT) && (arg.results[0] != 1) && !arg.done)
-        s = natsCondition_TimedWait(arg.c, arg.m, 5000);
+        s = natsCondition_TimedWait(arg.c, arg.m, 3000);
     natsMutex_Unlock(arg.m);
     testCond(s == NATS_OK);
 
@@ -14388,14 +14397,18 @@ _drainConnErrHandler(natsConnection *nc, natsSubscription *sub, natsStatus err, 
     natsStatus       s = NATS_OK;
 
     natsMutex_Lock(args->m);
-    s = natsConnection_GetLastError(nc, &lastError);
-    if ((s == err)
-            && (s == NATS_TIMEOUT)
-            && (lastError != NULL)
-            && (strstr(lastError, args->string) != NULL))
+    // Since error handler is async, there is no guarantee that
+    // natsConnection_GetLastError() returns the error we expect.
+    // Only check if the error matches `err`.
+    if (err == NATS_TIMEOUT)
     {
-        args->done = true;
-        natsCondition_Broadcast(args->c);
+        s = natsConnection_GetLastError(nc, &lastError);
+        if ((s != NATS_TIMEOUT)
+                || (strstr(lastError, args->string) != NULL))
+        {
+            args->done = true;
+            natsCondition_Broadcast(args->c);
+        }
     }
     natsMutex_Unlock(args->m);
 }

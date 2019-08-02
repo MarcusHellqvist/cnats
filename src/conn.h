@@ -32,6 +32,9 @@ void natsConn_Unlock(natsConnection *nc);
 
 #endif // DEV_MODE
 
+#define SET_WRITE_DEADLINE(nc) if ((nc)->opts->writeDeadline > 0) natsDeadline_Init(&(nc)->sockCtx.writeDeadline, (nc)->opts->writeDeadline)
+#define CLEAR_WRITE_DEADLINE(nc) if ((nc)->opts->writeDeadline > 0) natsDeadline_Clear(&(nc)->sockCtx.writeDeadline)
+
 natsStatus
 natsConn_create(natsConnection **newConn, natsOptions *options);
 

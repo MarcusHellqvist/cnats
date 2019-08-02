@@ -206,6 +206,7 @@ struct __natsOptions
     int                     maxReconnect;
     int64_t                 reconnectWait;
     int                     reconnectBufSize;
+    int64_t                 writeDeadline;
 
     char                    *user;
     char                    *password;
@@ -421,11 +422,13 @@ typedef struct __natsSockCtx
     // during the connect process. Should we make all read/writes non blocking,
     // then we will use two different fd sets, and also probably pass deadlines
     // individually as opposed to use one at the connection level.
-    fd_set          *fdSet;
+    fd_set          *readSet;
+    fd_set          *writeSet;
 #ifdef _WIN32
     fd_set          *errSet;
 #endif
-    natsDeadline    deadline;
+    natsDeadline    readDeadline;
+    natsDeadline    writeDeadline;
 
     SSL             *ssl;
 

@@ -1,4 +1,4 @@
-// Copyright 2015-2018 The NATS Authors
+// Copyright 2015-2019 The NATS Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -71,10 +71,12 @@ natsSock_Read(natsSockCtx *ctx, char *buffer, size_t maxBufferSize, int *n);
 natsStatus
 natsSock_Write(natsSockCtx *ctx, const char *data, int len, int *n);
 
+#define natsSock_WriteFully(c, d, l) natsSock_WriteFullyEx((c), (d), (l), NULL)
+
 // Writes 'len' bytes to the socket. Does not return until all bytes
 // have been written, unless the socket is closed or an error occurs.
 natsStatus
-natsSock_WriteFully(natsSockCtx *ctx, const char *data, int len);
+natsSock_WriteFullyEx(natsSockCtx *ctx, const char *data, int len, int *written);
 
 natsStatus
 natsSock_Flush(natsSock fd);

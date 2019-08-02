@@ -43,24 +43,23 @@ natsSock_Init(natsSockCtx *ctx)
 
     ctx->fd = NATS_SOCK_INVALID;
 
-    s = natsSock_CreateFDSet(&ctx->fdSet);
+    s = natsSock_CreateFDSet(&ctx->readSet);
     if (s == NATS_OK)
-    {
+        s = natsSock_CreateFDSet(&ctx->writeSet);
+    if (s == NATS_OK)
         s = natsSock_CreateFDSet(&ctx->errSet);
-        if (s != NATS_OK)
-        {
-            natsSock_DestroyFDSet(ctx->fdSet);
-            ctx->fdSet = NULL;
-        }
-    }
-    return s;
+
+    if (s != NATS_OK)
+        natsSock_Clear(ctx);
+
+    return NATS_UPDATE_ERR_STACK(s);
 }
 
 void
 natsSock_Clear(natsSockCtx *ctx)
 {
-    natsSock_DestroyFDSet(ctx->fdSet);
-    natsSock_DestroyFDSet(ctx->errSet);
+    natsSock_DestroyFDSet(ctx->readSet);
+    natsSock_DestroyFDSet(ctx->writeSet);
 }
 
 natsStatus
@@ -68,10 +67,16 @@ natsSock_WaitReady(int waitMode, natsSockCtx *ctx)
 {
     struct timeval  *timeout = NULL;
     int             res;
-    fd_set          *fdSet = ctx->fdSet;
-    fd_set          *errSet = ctx->errSet;
-    natsSock        sock = ctx->fd;
-    natsDeadline    *deadline = &(ctx->deadline);
+    fd_set          *fdSet    = ctx->writeSet;
+    fd_set          *errSet   = ctx->errSet;
+    natsSock        sock      = ctx->fd;
+    natsDeadline    *deadline = &(ctx->writeDeadline);
+
+    if (waitMode == WAIT_FOR_READ)
+    {
+        fdSet    = ctx->readSet;
+        deadline = &ctx->readDeadline;
+    }
 
     FD_ZERO(fdSet);
     FD_SET(sock, fdSet);

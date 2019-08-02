@@ -283,7 +283,11 @@ natsConn_bufferFlush(natsConnection *nc)
     }
     else
     {
-        s = natsSock_WriteFully(&(nc->sockCtx), natsBuf_Data(nc->bw), bufLen);
+        int sent = 0;
+
+        s = natsSock_WriteFullyEx(&(nc->sockCtx), natsBuf_Data(nc->bw), bufLen, &sent);
+        if (s != NATS_OK)
+            natsBuf_Consume(nc->bw, sent);
     }
 
     if (s == NATS_OK)
@@ -328,8 +332,15 @@ natsConn_bufferWrite(natsConnection *nc, const char *buffer, int len)
         // If there is nothing in the buffer...
         if (natsBuf_Len(nc->bw) == 0)
         {
+            int sent = 0;
+
             // Do a single socket write to avoid a copy
-            s = natsSock_WriteFully(&(nc->sockCtx), buffer + offset, len);
+            s = natsSock_WriteFullyEx(&(nc->sockCtx), buffer + offset, len, &sent);
+            if (s != NATS_OK)
+            {
+                int remaining = len - sent;
+                natsBuf_Append(nc->bw, buffer + offset + sent, remaining);
+            }
 
             // We are done
             return NATS_UPDATE_ERR_STACK(s);
@@ -342,22 +353,29 @@ natsConn_bufferWrite(natsConnection *nc, const char *buffer, int len)
         // Append that much bytes
         s = natsBuf_Append(nc->bw, buffer + offset, avail);
 
-        // Flush the buffer
-        if (s == NATS_OK)
-            s = natsConn_bufferFlush(nc);
-
-        // If success, then decrement what's left to send and update the
-        // offset.
+        // If success, then decrement what's left to send and update the offset.
         if (s == NATS_OK)
         {
             len    -= avail;
             offset += avail;
+
+            // Flush the buffer
+            s = natsConn_bufferFlush(nc);
+
+            // When OK, the whole buffer has been sent and reset.
+            // When not, however, some of the data may have been sent
+            // and bufferFlush will have consumed from the buffer the
+            // data that was sent.
         }
     }
 
-    // If there is data left, the buffer can now hold this data.
-    if ((s == NATS_OK) && (len > 0))
-        s = natsBuf_Append(nc->bw, buffer + offset, len);
+    // Success or not, store the remaining in the buffer.
+    if (len > 0)
+    {
+        natsStatus ls = natsBuf_Append(nc->bw, buffer + offset, len);
+        if (s == NATS_OK)
+            s = ls;
+    }
 
     return NATS_UPDATE_ERR_STACK(s);
 }
@@ -382,7 +400,8 @@ _createConn(natsConnection *nc)
     // Sets a deadline for the connect process (not just the low level
     // tcp connect. The deadline will be removed when we have received
     // the PONG to our initial PING. See _processConnInit().
-    natsDeadline_Init(&(nc->sockCtx.deadline), nc->opts->timeout);
+    natsDeadline_Init(&(nc->sockCtx.readDeadline), nc->opts->timeout);
+    natsDeadline_Init(&(nc->sockCtx.writeDeadline), nc->opts->timeout);
 
     // Set the IP resolution order
     nc->sockCtx.orderIP = nc->opts->orderIP;
@@ -419,7 +438,8 @@ _createConn(natsConnection *nc)
     if (s != NATS_OK)
     {
         // reset the deadline
-        natsDeadline_Clear(&(nc->sockCtx.deadline));
+        natsDeadline_Clear(&(nc->sockCtx.readDeadline));
+        natsDeadline_Clear(&(nc->sockCtx.writeDeadline));
     }
 
     return NATS_UPDATE_ERR_STACK(s);
@@ -1789,11 +1809,12 @@ _processConnInit(natsConnection *nc)
         s = _sendConnect(nc);
 
     // Clear our deadline, regardless of error
-    natsDeadline_Clear(&(nc->sockCtx.deadline));
+    natsDeadline_Clear(&(nc->sockCtx.readDeadline));
+    natsDeadline_Clear(&(nc->sockCtx.writeDeadline));
 
     // Switch to blocking socket here...
-    if (s == NATS_OK)
-        s = natsSock_SetBlocking(nc->sockCtx.fd, true);
+//    if (s == NATS_OK)
+//        s = natsSock_SetBlocking(nc->sockCtx.fd, true);
 
     // Start the readLoop and flusher threads
     if (s == NATS_OK)
@@ -1977,7 +1998,11 @@ _processOpError(natsConnection *nc, natsStatus s, bool initialConnect)
 
         if (nc->sockCtx.fdActive)
         {
+            SET_WRITE_DEADLINE(nc);
+
             natsConn_bufferFlush(nc);
+
+            CLEAR_WRITE_DEADLINE(nc);
 
             natsSock_Shutdown(nc->sockCtx.fd);
             nc->sockCtx.fdActive = false;
@@ -2056,6 +2081,7 @@ _readLoop(void  *arg)
         nats_sslRegisterThreadForCleanup();
 
     fd = nc->sockCtx.fd;
+    natsDeadline_Clear(&nc->sockCtx.readDeadline);
 
     if (nc->ps == NULL)
         s = natsParser_Create(&(nc->ps));
@@ -2069,7 +2095,9 @@ _readLoop(void  *arg)
         n = 0;
 
         s = natsSock_Read(&(nc->sockCtx), buffer, sizeof(buffer), &n);
-        if (s == NATS_OK)
+        if ((s == NATS_IO_ERROR) && (NATS_SOCK_GET_ERROR == NATS_SOCK_WOULD_BLOCK))
+            s = NATS_OK;
+        if ((s == NATS_OK) && (n > 0))
             s = natsParser_Parse(nc, buffer, n);
 
         if (s != NATS_OK)
@@ -2132,7 +2160,12 @@ _flusher(void *arg)
 
         if (nc->sockCtx.fdActive && (natsBuf_Len(nc->bw) > 0))
         {
+            SET_WRITE_DEADLINE(nc);
+
             s = natsConn_bufferFlush(nc);
+
+            CLEAR_WRITE_DEADLINE(nc);
+
             if ((s != NATS_OK) && (nc->err == NATS_OK))
                 nc->err = s;
         }
@@ -2150,12 +2183,17 @@ _sendPing(natsConnection *nc, natsPong *pong)
 {
     natsStatus  s     = NATS_OK;
 
+    SET_WRITE_DEADLINE(nc);
+
     s = natsConn_bufferWrite(nc, _PING_PROTO_, _PING_PROTO_LEN_);
     if (s == NATS_OK)
     {
         // Flush the buffer in place.
         s = natsConn_bufferFlush(nc);
     }
+
+    CLEAR_WRITE_DEADLINE(nc);
+
     if (s == NATS_OK)
     {
         // Now that we know the PING was sent properly, update
@@ -2305,15 +2343,19 @@ _close(natsConnection *nc, natsConnStatus status, bool doCBs)
     natsConn_lockAndRetain(nc);
     nc->abortConn = true;
 
+    SET_WRITE_DEADLINE(nc);
+
     // If connection is not already closed and currently connected, attempt to
     // send a PING and get a PONG to ensure that not only buffers are flushed
     // but that server has processed anything that was pending.
     if (!natsConn_isClosed(nc) && (nc->status == NATS_CONN_STATUS_CONNECTED))
-        _flushTimeout(nc, 2000);
+       _flushTimeout(nc, 2000);
 
     if (natsConn_isClosed(nc))
     {
         nc->status = status;
+
+        CLEAR_WRITE_DEADLINE(nc);
 
         natsConn_unlockAndRelease(nc);
         return;
@@ -2373,6 +2415,8 @@ _close(natsConnection *nc, natsConnStatus status, bool doCBs)
 
     sub = nc->respMux;
     nc->respMux = NULL;
+
+    CLEAR_WRITE_DEADLINE(nc);
 
     natsConn_Unlock(nc);
 
@@ -2618,8 +2662,12 @@ natsConn_processPing(natsConnection *nc)
 {
     natsConn_Lock(nc);
 
+    SET_WRITE_DEADLINE(nc);
+
     if (natsConn_bufferWrite(nc, _PONG_PROTO_, _PONG_PROTO_LEN_) == NATS_OK)
         natsConn_flushOrKickFlusher(nc);
+
+    CLEAR_WRITE_DEADLINE(nc);
 
     natsConn_Unlock(nc);
 }
@@ -2792,9 +2840,13 @@ natsConn_subscribeImpl(natsSubscription **newSub,
 
             if (s == NATS_OK)
             {
+                SET_WRITE_DEADLINE(nc);
+
                 s = natsConn_bufferWriteString(nc, proto);
                 if (s == NATS_OK)
                     s = natsConn_flushOrKickFlusher(nc);
+
+                CLEAR_WRITE_DEADLINE(nc);
 
                 // We should not return a failure if we get an issue
                 // with the buffer write (except if it is no memory).
@@ -2861,11 +2913,15 @@ natsConn_unsubscribe(natsConnection *nc, natsSubscription *sub, int max)
 
     if ((s == NATS_OK) && !natsConn_isReconnecting(nc))
     {
+        SET_WRITE_DEADLINE(nc);
+
         // We will send these for all subs when we reconnect
         // so that we can suppress here.
         s = _sendUnsubProto(nc, sub->sid, max);
         if (s == NATS_OK)
             s = natsConn_flushOrKickFlusher(nc);
+
+        CLEAR_WRITE_DEADLINE(nc);
 
         // We should not return a failure if we get an issue
         // with the buffer write (except if it is no memory).

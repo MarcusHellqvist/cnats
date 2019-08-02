@@ -141,6 +141,8 @@ natsConn_publish(natsConnection *nc, const char *subj,
     if (s == NATS_OK)
         s = natsBuf_Append(nc->scratch, _CRLF_, _CRLF_LEN_);
 
+    SET_WRITE_DEADLINE(nc);
+
     if (s == NATS_OK)
         s = natsConn_bufferWrite(nc, natsBuf_Data(nc->scratch), msgHdSize);
 
@@ -157,6 +159,8 @@ natsConn_publish(natsConnection *nc, const char *subj,
         else
             s = natsConn_flushOrKickFlusher(nc);
     }
+
+    CLEAR_WRITE_DEADLINE(nc);
 
     if (s == NATS_OK)
     {

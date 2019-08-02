@@ -1,4 +1,4 @@
-// Copyright 2015-2018 The NATS Authors
+// Copyright 2015-2019 The NATS Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -331,18 +331,18 @@ natsSock_Read(natsSockCtx *ctx, char *buffer, size_t maxBufferSize, int *n)
             {
                 int sslErr = SSL_get_error(ctx->ssl, readBytes);
 
-                if ((sslErr != SSL_ERROR_WANT_READ)
-                    && (sslErr != SSL_ERROR_WANT_WRITE))
-                {
-                    return nats_setError(NATS_IO_ERROR, "SSL_read error: %s",
-                                         NATS_SSL_ERR_REASON_STRING);
-                }
-                else
+                if ((sslErr == SSL_ERROR_WANT_READ)
+                        || (sslErr == SSL_ERROR_WANT_WRITE))
                 {
                     // SSL requires that we go back with the same buffer
                     // and size. We can't return until SSL_read returns
                     // success (bytes read) or a different error.
                     continue;
+                }
+                else if (NATS_SOCK_GET_ERROR != NATS_SOCK_WOULD_BLOCK)
+                {
+                    return nats_setError(NATS_IO_ERROR, "SSL_read error: %s",
+                                         NATS_SSL_ERR_REASON_STRING);
                 }
             }
             else
@@ -406,18 +406,19 @@ natsSock_Write(natsSockCtx *ctx, const char *data, int len, int *n)
             if (ctx->ssl != NULL)
             {
                 int sslErr = SSL_get_error(ctx->ssl, bytes);
-                if ((sslErr != SSL_ERROR_WANT_READ)
-                    && (sslErr != SSL_ERROR_WANT_WRITE))
-                {
-                    return nats_setError(NATS_IO_ERROR, "SSL_write error: %s",
-                                         NATS_SSL_ERR_REASON_STRING);
-                }
-                else
+
+                if ((sslErr == SSL_ERROR_WANT_READ)
+                        || (sslErr == SSL_ERROR_WANT_WRITE))
                 {
                     // SSL requires that we go back with the same buffer
                     // and size. We can't return until SSL_write returns
                     // success (bytes written) a different error.
                     continue;
+                }
+                else if (NATS_SOCK_GET_ERROR != NATS_SOCK_WOULD_BLOCK)
+                {
+                    return nats_setError(NATS_IO_ERROR, "SSL_write error: %s",
+                                         NATS_SSL_ERR_REASON_STRING);
                 }
             }
             else
@@ -456,30 +457,35 @@ natsSock_Write(natsSockCtx *ctx, const char *data, int len, int *n)
 }
 
 natsStatus
-natsSock_WriteFully(natsSockCtx *ctx, const char *data, int len)
+natsSock_WriteFullyEx(natsSockCtx *ctx, const char *data, int len, int *written)
 {
     natsStatus  s     = NATS_OK;
     int         bytes = 0;
     int         n     = 0;
 
+    if (len == 0)
+    {
+        *written = 0;
+        return NATS_OK;
+    }
+
     do
     {
         s = natsSock_Write(ctx, data, len, &n);
-        if (s == NATS_OK)
-        {
-            if (n > 0)
-            {
-                data += n;
-                len  -= n;
-            }
 
-            // We use an external event loop and got nothing, or we have
-            // sent the whole buffer. Return.
-            if ((n == 0) || (len == 0))
-                return NATS_OK;
-        }
+        bytes += n;
+        data  += n;
+        len   -= n;
+
+        // We use an external event loop and got nothing, or we have
+        // sent the whole buffer. Return.
+        if ((n == 0) || (len == 0))
+            break;
     }
     while (s == NATS_OK);
+
+    if (written != NULL)
+        *written = bytes;
 
     return NATS_UPDATE_ERR_STACK(s);
 }
