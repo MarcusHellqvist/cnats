@@ -1,4 +1,4 @@
-// Copyright 2015-2018 The NATS Authors
+// Copyright 2019 The NATS Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,27 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
-#ifndef NATSTIME_H_
-#define NATSTIME_H_
-
-#include "natsp.h"
-
-typedef struct __natsDeadline
-{
-    int64_t             absoluteTime;
-    bool                active;
-
-} natsDeadline;
+#ifndef CRYPTO_H_
+#define CRYPTO_H_
 
 void
-natsDeadline_Init(natsDeadline *deadline, int64_t timeout);
-
-int
-natsDeadline_GetTimeout(natsDeadline *deadline);
+crypto_sign(unsigned char *signedMsg, int *signedMsgLen,
+            const unsigned char *msg, int msgLen,
+            const unsigned char *secretKey);
 
 void
-natsDeadline_Clear(natsDeadline *deadline);
+crypto_new_key_from_seed(const unsigned char *seed, unsigned char *sk);
 
-
-#endif /* NATSTIME_H_ */
+#endif /* CRYPTO_H_ */

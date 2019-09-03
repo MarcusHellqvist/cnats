@@ -1,4 +1,4 @@
-// Copyright 2015-2018 The NATS Authors
+// Copyright 2019 The NATS Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,27 +11,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
-#ifndef NATSTIME_H_
-#define NATSTIME_H_
+#ifndef NKEYS_H_
+#define NKEYS_H_
 
 #include "natsp.h"
 
-typedef struct __natsDeadline
-{
-    int64_t             absoluteTime;
-    bool                active;
+#define NKEYS_SEED_BYTES        32
+#define NKEYS_SECRETKEY_BYTES   64
+#define NKEYS_SIGN_BYTES        64
 
-} natsDeadline;
+#define NKEYS_INVALID_ENCODED_KEY   "invalid encoded key"
+#define NKEYS_INVALID_CHECKSUM      "invalid checksum"
+#define NKEYS_INVALID_SEED          "invalid seed"
+#define NKEYS_INVALID_PREFIX        "invalid prefix byte"
 
-void
-natsDeadline_Init(natsDeadline *deadline, int64_t timeout);
+natsStatus
+natsKeys_Sign(const char *encodedSeed, const unsigned char *input, int inputLen, unsigned char **out, int *outLen);
 
-int
-natsDeadline_GetTimeout(natsDeadline *deadline);
-
-void
-natsDeadline_Clear(natsDeadline *deadline);
-
-
-#endif /* NATSTIME_H_ */
+#endif /* NKEYS_H_ */

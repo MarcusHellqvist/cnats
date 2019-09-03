@@ -1,19 +1,21 @@
 # NATS & NATS Streaming - C Client
 A C client for the [NATS messaging system](https://nats.io).
 
-Go [here](http://nats-io.github.io/cnats) for the online documentation,
-and check the [frequently asked questions](https://github.com/nats-io/cnats#faq).
+Go [here](http://nats-io.github.io/nats.c) for the online documentation,
+and check the [frequently asked questions](https://github.com/nats-io/nats.c#faq).
 
-This NATS Client implementation is heavily based on the [NATS GO Client](https://github.com/nats-io/nats). There is support for Mac OS/X, Linux and Windows (although we don't have specific platform support matrix).
+This NATS Client implementation is heavily based on the [NATS GO Client](https://github.com/nats-io/nats.go). There is support for Mac OS/X, Linux and Windows (although we don't have specific platform support matrix).
 
 [![License Apache 2](https://img.shields.io/badge/License-Apache2-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
-[![Build Status](https://travis-ci.org/nats-io/cnats.svg?branch=master)](http://travis-ci.org/nats-io/cnats)
-[![Release](https://img.shields.io/badge/release-v1.8.0-blue.svg?style=flat)](https://github.com/nats-io/cnats/releases/tag/v1.8.0)
-[![Documentation](https://img.shields.io/badge/doc-Doxygen-brightgreen.svg?style=flat)](http://nats-io.github.io/cnats)
+[![Build Status](https://travis-ci.org/nats-io/nats.c.svg?branch=master)](http://travis-ci.org/nats-io/nats.c)
+[![Coverage Status](https://coveralls.io/repos/github/nats-io/nats.c/badge.svg?branch=master)](https://coveralls.io/github/nats-io/nats.c?branch=master)
+[![Release](https://img.shields.io/badge/release-v2.0.0-blue.svg?style=flat)](https://github.com/nats-io/nats.c/releases/tag/v2.0.0)
+[![Documentation](https://img.shields.io/badge/doc-Doxygen-brightgreen.svg?style=flat)](http://nats-io.github.io/nats.c)
 
 # Table of Contents
 
 - [Building](#building)
+	* [TLS Support](#tls-support)
 - [Documentation](#documentation)
 - [NATS Client](#nats-client)
     * [Important Changes](#important-changes)
@@ -22,6 +24,7 @@ This NATS Client implementation is heavily based on the [NATS GO Client](https:/
 	* [Wildcard Subscriptions](#wildcard-subscriptions)
 	* [Queue Groups](#queue-groups)
 	* [TLS](#tls)
+	* [New Authentication (Nkeys and User Credentials)](#new-authentication-nkeys-and-user-credentials)
 	* [Advanced Usage](#advanced-usage)
 	* [Clustered Usage](#clustered-usage)
 	* [Using an Event Loop Library](#using-an-event-loop-library)
@@ -54,7 +57,7 @@ This NATS Client implementation is heavily based on the [NATS GO Client](https:/
 
 First, download the source code:
 ```
-git clone git@github.com:nats-io/cnats.git .
+git clone git@github.com:nats-io/nats.c.git .
 ```
 
 To build the library, use [CMake](https://cmake.org/download/). Note that by default the NATS Streaming API will be built and included in the NATS library.
@@ -74,12 +77,43 @@ You can also specify command line parameters to set some of the cmake options di
 cmake .. -DNATS_BUILD_WITH_TLS=OFF
 ```
 
-Or, if you don't want to build the NATS Streaming APIs to be included in the NATS library:
+When building the library with Streaming support, the NATS library uses the [libprotobuf-c](https://github.com/protobuf-c/protobuf-c) library.
+When cmake runs for the first time (or after removing `CMakeCache.txt` and calling `cmake ..` again), it is looking for the libprotobuf-c library. If it does not find it, a message is printed and the build process fails.
+CMake searches for the library in directories where libraries are usually found. However, if you want to specify a specific directory where the library is located, you need to do this:
+```
+cmake .. -DNATS_PROTOBUF_DIR=<my libprotobuf-c directory>
+```
+The static library will be used by default. If you want to change that, or if the library has not the expected name, you need to do this:
+```
+# Use the library named mylibproto.so located at /my/location
+cmake .. -DNATS_PROTOBUF_LIBRARY=/my/location/mylibproto.so
+```
+The two could be combined if the include header is located in a different directory
+```
+# Use the library named mylibproto.so located at /my/location and the directory protobuf-c/ containing protobuf-c.h located at /my/other/location
+cmake .. -DNATS_PROTOBUF_LIBRARY=/my/location/mylibproto.so -DNATS_PROTOBUF_DIR=/my/other/location
+```
+
+If you don't want to build the NATS Streaming APIs to be included in the NATS library:
 ```
 cmake .. -DNATS_BUILD_STREAMING=OFF
 ```
 
-If you had previously build the library, you may need to do a `make clean`, or simply delete and re-create the build directory before executing the cmake command.
+In some architectures, you may experience a compilation error for `mutex.c.o` because there is no support
+for the assembler instruction that we use to yield when spinning trying to acquire a lock.
+
+You may get this sort of build error:
+```
+/tmp/cc1Yp7sD.s: Assembler messages:
+/tmp/cc1Yp7sD.s:302: Error: selected processor does not support ARM mode `yield'
+src/CMakeFiles/nats_static.dir/build.make:542: recipe for target 'src/CMakeFiles/nats_static.dir/unix/mutex.c.o' failed
+```
+If that's the case, you can solve this by enabling the `NATS_BUILD_NO_SPIN` flag (or use `-DNATS_NO_SPIN` if you compile without CMake):
+```
+cmake .. -DNATS_BUILD_NO_SPIN=ON
+```
+
+If you had previously built the library, you may need to do a `make clean`, or simply delete and re-create the build directory before executing the cmake command.
 
 To build on Windows, you would need to select the build generator. For instance, to select `nmake`, you would run:
 
@@ -133,7 +167,7 @@ If you add a test to `test/test.c`, you need to add it into the `allTests` array
 Build you changes:
 
 ```
-$ make
+make
 [ 44%] Built target nats
 [ 88%] Built target nats_static
 [ 90%] Built target nats-publisher
@@ -150,23 +184,23 @@ Linking C executable testsuite
 Now regenerate the list by invoking the test suite without any argument:
 
 ```
-$ ./test/testsuite
+./test/testsuite
 Number of tests: 77
 ```
 
 This list the number of tests added to the file `list.txt`. Move this file to the source's test directory.
 
 ```
-$ mv list.txt ../test/
+mv list.txt ../test/
 ```
 
 Then, refresh the build:
 
 ```
-$ cmake ..
+cmake ..
 -- Configuring done
 -- Generating done
--- Build files have been written to: /home/ivan/cnats/build
+-- Build files have been written to: /home/ivan/nats.c/build
 ```
 
 You can use the following environment variables to influence the testsuite behavior.
@@ -185,11 +219,37 @@ When running the tests in verbose mode, the following environment variable allow
 export NATS_TEST_KEEP_SERVER_OUTPUT=yes
 ```
 
-If you want to change the default server executable name (`gnastd`) or specify a specific location, use this environment variable:
+If you want to change the default server executable name (`nats-server.exe`) or specify a specific location, use this environment variable:
 
 ```
-set NATS_TEST_SERVER_EXE=c:\test\gnatsd.exe
+set NATS_TEST_SERVER_EXE=c:\test\nats-server.exe
 ```
+
+## TLS Support
+
+By default, the library is built with TLS support. You can disable this from the cmake gui `make edit_cache` and switch the `NATS_BUILD_WITH_TLS` option to `OFF`, or pass the option directly to the `cmake` command:
+
+```
+cmake .. -DNATS_BUILD_WITH_TLS=OFF
+```
+
+Starting `2.0.0`, when building with TLS/SSL support, the server certificate's expected hostname is always verified. It means that the hostname provided in the URL(s) or through the option `natsOptions_SetExpectedHostname()` will be used to check the hostname present in the certificate. Prior to `2.0.0`, the hostname would be verified *only* if the option `natsOptions_SetExpectedHostname()` was invoked.
+
+Although we recommend leaving the new default behavior, you can restore the previous behavior by building the library with this option off:
+
+```
+cmake .. -DNATS_BUILD_TLS_FORCE_HOST_VERIFY=OFF
+```
+
+The NATS C client is built using APIs from the [OpenSSL](https://github.com/openssl/openssl) library. By default we use `1.0.2` APIs. You can compile the NATS C client with OpenSSL API version `1.1+`. To do that, you need to enable the `NATS_BUILD_TLS_USE_OPENSSL_1_1_API` option:
+
+```
+cmake .. -DNATS_BUILD_TLS_USE_OPENSSL_1_1_API=ON
+```
+
+Since the NATS C client dynamically links to the OpenSSL library, you need to make sure that you are then running your application against an OpenSSL 1.1+ library.
+
+Note that the option `NATS_BUILD_WITH_TLS_CLIENT_METHOD` is deprecated. Its purpose was to make the NATS C client use a method that was introduced in OpenSSL `1.1+`. The new option `NATS_BUILD_TLS_USE_OPENSSL_1_1_API` is more generic and replaces `NATS_BUILD_WITH_TLS_CLIENT_METHOD`. If you are using scripts to automate your build process that makes use of `NATS_BUILD_WITH_TLS_CLIENT_METHOD`, they will still work and using this deprecated option will have the same effect than setting `NATS_BUILD_TLS_USE_OPENSSL_1_1_API` to `ON`.
 
 # Documentation
 
@@ -208,13 +268,13 @@ From the build directory:
 ```
 cmake .. -DNATS_UPDATE_DOC=ON
 make
-cd <cnats root dir>/doc
+cd <nats.c root dir>/doc
 doxygen DoxyFile.NATS.Client
 ```
 
 The generated documentation will be located in the `html` directory. To see the documentation, point your browser to the file `index.html` in that directory.
 
-Go [here](http://nats-io.github.io/cnats) for the online documentation.
+Go [here](http://nats-io.github.io/nats.c) for the online documentation.
 
 The source code is also quite documented.
 
@@ -223,6 +283,15 @@ The source code is also quite documented.
 ## Important Changes
 
 This section lists important changes such as deprecation notices, etc...
+
+### Version `2.0.0`
+
+This version introduces the security concepts used by NATS Server `2.0.0` and therefore aligns with the server version. There have been new APIs introduced, but the most important change is the new default behavior with TLS connections:
+
+* When establishing a secure connection, the server certificate's hostname is now always verified, regardless if the user has invoked `natsOptions_SetExpectedHostname()`. This may break applications that were for instance using an IP to connect to a server that had only the hostname in the certificate. This can be solved by changing your application to use the hostname in the URL or make use of `natsOptions_SetExpectedHostname()`. If this is not possible, you can restore the old behavior by building the library with the new behavior disabled. See #tls-support for more information.
+
+* This repository used to include precompiled libraries of [libprotobuf-c](https://github.com/protobuf-c/protobuf-c) for macOS, Linux and Windows along with the header files (in the `/pbuf` directory).
+We have now removed this directory and require that the user installs the libprotobuf-c library separately. See the [building instructions](#building) to specify the library location if CMake cannot find it directly.
 
 ### Version `1.8.0`
 
@@ -433,6 +502,79 @@ natsConnection_Connect(&nc, opts);
 // That's it! On success you will have a secure connection with the server!
 ```
 
+## New Authentication (Nkeys and User Credentials)
+
+This requires server with version >= 2.0.0
+
+NATS servers have a new security and authentication mechanism to authenticate with user credentials and Nkeys. The simplest form is to use the helper option `natsOptions_SetUserCredentialsFromFiles()`.
+
+```c
+// Retrieve both user JWT and NKey seed from single file `user.creds`.
+s = natsOptions_SetUserCredentialsFromFiles(opts, "user.creds", NULL);
+if (s == NATS_OK)
+    s = natsConnection_Connect(&nc, opts);
+```
+
+With this option, the library will load the user JWT and NKey seed from a single file. Note that the library wipes the buffers used to read the files.
+
+If you prefer to store the JWT and seed in two distinct files, use this form instead:
+
+```c
+// Retrieve the user JWT from the file `user.jwt` and the seed from the file `user.nk`.
+s = natsOptions_SetUserCredentialsFromFiles(opts, "user.jwt", "user.nk");
+if (s == NATS_OK)
+    s = natsConnection_Connect(&nc, opts);
+```
+
+You can also set the callback handlers and manage challenge signing directly.
+
+```c
+/*
+ * myUserJWTCb is a callback that is supposed to return the user JWT.
+ * An optional closure can be specified.
+ * mySignatureCB is a callback that is presented with a nonce and is
+ * responsible for returning the signature for this nonce.
+ * An optional closure can be specified.
+ */
+s = natsOptions_SetUserCredentialsCallbacks(opts, myUserJWTCb, NULL, mySignatureCb, NULL);
+if (s == NATS_OK)
+    s = natsConnection_Connect(&nc, opts);
+```
+
+Finally, it is possible to specify the public NKey and the signature callback. The public key will be sent to the server and the provided callback is responsible for signing the server's nonce. When the server receives the signed nonce, it can check that it was signed poperly using the provided public key.
+
+```c
+/*
+ * myPublicKey is the user's public key, which will be sent to the server.
+ * mySignatureCB is a callback that is presented with a nonce and is
+ * responsible for returning the signature for this nonce.
+ * An optional closure can be specified.
+ */
+s = natsOptions_SetNKey(opts, myPublicKey, mySignatureCb, NULL);
+if (s == NATS_OK)
+    s = natsConnection_Connect(&nc, opts);
+```
+
+You can sign any content and get the signature in return. The connection must have been created with the `natsOptions_SetUserCredentialsFromFiles()` option for that to work.
+```c
+    s = natsOptions_Create(&opts);
+    if (s == NATS_OK)
+        s = natsOptions_SetUserCredentialsFromFiles(opts, "user.creds", NULL);
+    if (s == NATS_OK)
+        s = natsConnection_Connect(&nc, opts);
+
+    // Sign some arbitrary content
+    const unsigned char *content   = (const unsigned char*) "hello";
+    int                 contentLen = 5;
+    unsigned char       sig[64];
+
+    s = natsConnection_Sign(nc, content, contentLen, sig);
+    if (s == NATS_OK)
+    {
+        // Do something with signature...
+    }
+```
+
 ## Advanced Usage
 
 Flushing a connection ensures that any data buffered is flushed (sent to) the NATS Server.
@@ -612,6 +754,7 @@ passing a connection handler:
 ```
 Check the example `examples/connect.c` for more use cases.
 
+
 ## Clustered Usage
 
 ```c
@@ -733,11 +876,11 @@ does not break the ones we support!
 
 We use cmake since it allows cross-platforms builds. This works for us. You are free to
 create your own makefile or Windows solution. If you want to use cmake, follow these
-[instructions](https://github.com/nats-io/cnats#build).
+[instructions](https://github.com/nats-io/nats.c#build).
 
 <b>I have found a bug in your library, what do I do?</b>
 
-Please report an issue [here](https://github.com/nats-io/cnats/issues/new). Give us as much
+Please report an issue [here](https://github.com/nats-io/nats.c/issues/new). Give us as much
 as possible information on how you can reproduce this. If you have a fix for it, you can
 also open a PR.
 

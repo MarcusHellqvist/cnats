@@ -5,6 +5,7 @@ var group__opts_group =
     [ "natsOptions_SetServers", "group__opts_group.html#gacb7e964ae54b74d972d72e118b7b8bdf", null ],
     [ "natsOptions_SetUserInfo", "group__opts_group.html#ga5b99da7dd74aac3be962f323c3863d9e", null ],
     [ "natsOptions_SetToken", "group__opts_group.html#gad58a5b9dabadeebda30e952ff7b39193", null ],
+    [ "natsOptions_SetTokenHandler", "group__opts_group.html#ga23a3b1f022112e98ddccb18b247b4426", null ],
     [ "natsOptions_SetNoRandomize", "group__opts_group.html#gaabf8763b931dcf389c83fd95d760a413", null ],
     [ "natsOptions_SetTimeout", "group__opts_group.html#ga17cd7fe41176cd98aca1184fa9352ad9", null ],
     [ "natsOptions_SetName", "group__opts_group.html#ga1c529d347be0fe2eec17c7f4698e283e", null ],
@@ -35,5 +36,8 @@ var group__opts_group =
     [ "natsOptions_UseOldRequestStyle", "group__opts_group.html#ga70aa85319933d78c0076cc862fa3e5a6", null ],
     [ "natsOptions_SetNoEcho", "group__opts_group.html#ga4f694b87039cedaa65cd25656b14d1a3", null ],
     [ "natsOptions_SetRetryOnFailedConnect", "group__opts_group.html#ga20946800d024b7089e73d63454d1c19f", null ],
+    [ "natsOptions_SetUserCredentialsCallbacks", "group__opts_group.html#ga60117450fc1f7b6f81bab455aeed7515", null ],
+    [ "natsOptions_SetUserCredentialsFromFiles", "group__opts_group.html#ga59b47f7b7a19085cf8eaada9bfe5606e", null ],
+    [ "natsOptions_SetNKey", "group__opts_group.html#ga0290eac4665569c850468d9f00e246a0", null ],
     [ "natsOptions_Destroy", "group__opts_group.html#ga93d8068cd6fff53b7f8e1c403db45eb9", null ]
 ];

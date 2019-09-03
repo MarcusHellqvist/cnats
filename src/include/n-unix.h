@@ -21,15 +21,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#ifdef DARWIN
-#define FD_SETSIZE  (32768)
-#else
-#include <sys/types.h>
-#undef __FD_SETSIZE
-#define __FD_SETSIZE (32768)
-#include <sys/select.h>
-#endif
-
 #include <sys/time.h>
 #include <fcntl.h>
 #include <netinet/tcp.h>
@@ -41,11 +32,7 @@
 #include <errno.h>
 #include <string.h>
 #include <netinet/in.h>
-#if defined(NATS_USE_X_LOCALE)
-#include <xlocale.h>
-#else
-#include <locale.h>
-#endif
+#include <poll.h>
 
 typedef pthread_t       natsThread;
 typedef pthread_key_t   natsThreadLocal;
@@ -54,7 +41,6 @@ typedef pthread_cond_t  natsCondition;
 typedef pthread_once_t  natsInitOnceType;
 typedef socklen_t       natsSockLen;
 typedef size_t          natsRecvLen;
-typedef locale_t        natsLocale;
 
 #define NATS_ONCE_STATIC_INIT   PTHREAD_ONCE_INIT
 
@@ -71,6 +57,6 @@ typedef locale_t        natsLocale;
 #define nats_asprintf       asprintf
 #define nats_strcasestr     strcasestr
 #define nats_vsnprintf      vsnprintf
-#define nats_strtold(p, t)  strtold_l((p), (t), (natsLib_getLocale()))
+#define nats_strtok         strtok_r
 
 #endif /* N_UNIX_H_ */

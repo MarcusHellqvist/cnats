@@ -1,4 +1,4 @@
-// Copyright 2015-2018 The NATS Authors
+// Copyright 2015-2019 The NATS Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -75,9 +75,10 @@
 #define _UNSUB_PROTO_        "UNSUB %" PRId64 " %d\r\n"
 #define _UNSUB_NO_MAX_PROTO_ "UNSUB %" PRId64 " \r\n"
 
-#define STALE_CONNECTION     "Stale Connection"
-#define PERMISSIONS_ERR      "Permissions Violation"
-#define AUTHORIZATION_ERR    "Authorization Violation"
+#define STALE_CONNECTION            "Stale Connection"
+#define PERMISSIONS_ERR             "Permissions Violation"
+#define AUTHORIZATION_ERR           "Authorization Violation"
+#define AUTHENTICATION_EXPIRED_ERR  "User Authentication Expired"
 
 #define _CRLF_LEN_          (2)
 #define _SPC_LEN_           (1)
@@ -115,6 +116,10 @@ static const char *inboxPrefix = "_INBOX.";
 #define IF_OK_DUP_STRING(s, s1, s2) \
         if ((s) == NATS_OK) \
             DUP_STRING((s), (s1), (s2))
+
+
+#define ERR_CODE_AUTH_EXPIRED   (1)
+#define ERR_CODE_AUTH_VIOLATION (2)
 
 // This is temporary until we remove original connection status enum
 // values without NATS_CONN_STATUS_ prefix
@@ -154,6 +159,7 @@ typedef struct __natsServerInfo
     int         connectURLsCount;
     int         proto;
     uint64_t    CID;
+    char        *nonce;
 
 } natsServerInfo;
 
@@ -178,6 +184,13 @@ typedef struct
 
 } natsEvLoopCallbacks;
 
+typedef struct __userCreds
+{
+    char        *userOrChainedFile;
+    char        *seedFile;
+
+} userCreds;
+
 struct __natsOptions
 {
     // This field must be the first (see natsOptions_clone, same if you add
@@ -194,6 +207,7 @@ struct __natsOptions
     bool                    pedantic;
     bool                    allowReconnect;
     bool                    secure;
+    int                     ioBufSize;
     int                     maxReconnect;
     int64_t                 reconnectWait;
     int                     reconnectBufSize;
@@ -252,6 +266,24 @@ struct __natsOptions
     // If set to true, in case of failed connect, tries again using
     // reconnect options values.
     bool                    retryOnFailedConnect;
+
+    // Callback/closure used to get the user JWT. Will be set to
+    // internal natsConn_userFromFile function when userCreds != NULL.
+    natsUserJWTHandler      userJWTHandler;
+    void                    *userJWTClosure;
+
+    // Callback/closure used to sign the server nonce. Will be set to
+    // internal natsConn_signatureHandler function when userCreds != NULL;
+    natsSignatureHandler    sigHandler;
+    void                    *sigClosure;
+
+    // Public NKey that will be used to authenticate when connecting
+    // to the server.
+    char                    *nkey;
+
+    // If user has invoked natsOptions_SetUserCredentialsFromFiles, this
+    // will be set and points to userOrChainedFile and possibly seedFile.
+    userCreds               *userCreds;
 };
 
 typedef struct __natsMsgList
@@ -392,12 +424,7 @@ typedef struct __natsSockCtx
 
     // We switch to blocking socket after receiving the PONG to the first PING
     // during the connect process. Should we make all read/writes non blocking,
-    // then we will use two different fd sets, and also probably pass deadlines
-    // individually as opposed to use one at the connection level.
-    fd_set          *fdSet;
-#ifdef _WIN32
-    fd_set          *errSet;
-#endif
+    // then we will use two different deadlines.
     natsDeadline    deadline;
 
     SSL             *ssl;
@@ -424,7 +451,8 @@ struct __natsConnection
 {
     natsMutex           *mu;
     natsOptions         *opts;
-    const natsUrl       *url;
+    natsSrv             *cur;
+    const char          *tlsName;
 
     int                 refs;
 
@@ -446,6 +474,8 @@ struct __natsConnection
 
     natsConnStatus      status;
     bool                initc; // true if the connection is performing the initial connect
+    bool                ar;    // abort reconnect attempts
+    bool                rle;   // reconnect loop ended
     natsStatus          err;
     char                errStr[256];
 
@@ -499,6 +529,7 @@ struct __natsConnection
 //
 // Library
 //
+
 void
 natsSys_Init(void);
 
@@ -547,9 +578,6 @@ natsLib_isLibHandlingMsgDeliveryByDefault(void);
 
 void
 natsLib_getMsgDeliveryPoolInfo(int *maxSize, int *size, int *idx, natsMsgDlvWorker ***workersArray);
-
-natsLocale
-natsLib_getLocale(void);
 
 void
 nats_setNATSThreadKey(void);

@@ -1,4 +1,4 @@
-// Copyright 2015-2018 The NATS Authors
+// Copyright 2015-2019 The NATS Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,12 +16,12 @@
 #include "stan/stanp.h"
 #endif
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <inttypes.h>
 #include <assert.h>
 #include <stdarg.h>
-#include <locale.h>
 
 #include "mem.h"
 #include "timer.h"
@@ -29,6 +29,7 @@
 #include "asynccb.h"
 #include "conn.h"
 #include "sub.h"
+#include "nkeys.h"
 
 #define WAIT_LIB_INITIALIZED \
         natsMutex_Lock(gLib.lock); \
@@ -104,6 +105,7 @@ typedef struct __natsLib
     natsCondition   *closeCompleteCond;
     bool            *closeCompleteBool;
     bool            closeCompleteSignal;
+    bool            finalCleanup;
     // Do not move 'refs' without checking _freeLib()
     int             refs;
 
@@ -114,8 +116,6 @@ typedef struct __natsLib
     natsLibTimers       timers;
     natsLibAsyncCbs     asyncCbs;
     natsLibDlvWorkers   dlvWorkers;
-
-    natsLocale      locale;
 
     natsCondition   *cond;
 
@@ -139,7 +139,7 @@ _destroyErrTL(void *localStorage)
 static void
 _cleanupThreadSSL(void *localStorage)
 {
-#if defined(NATS_HAS_TLS)
+#if defined(NATS_HAS_TLS) && !defined(NATS_USE_OPENSSL_1_1)
     ERR_remove_thread_state(0);
 #endif
 }
@@ -147,24 +147,15 @@ _cleanupThreadSSL(void *localStorage)
 static void
 _finalCleanup(void)
 {
-    int refs = 0;
-
-    natsMutex_Lock(gLib.lock);
-    refs = gLib.refs;
-    natsMutex_Unlock(gLib.lock);
-
-    // If some thread is still around when the process exits and has a
-    // reference to the library, then don't do the final cleanup...
-    if (refs != 0)
-        return;
-
     if (gLib.sslInitialized)
     {
 #if defined(NATS_HAS_TLS)
         ERR_free_strings();
         EVP_cleanup();
         CRYPTO_cleanup_all_ex_data();
+#if !defined(NATS_USE_OPENSSL_1_1)
         ERR_remove_thread_state(0);
+#endif
         sk_SSL_COMP_free(SSL_COMP_get_compression_methods());
 #endif
         natsThreadLocal_DestroyKey(gLib.sslTLKey);
@@ -244,6 +235,8 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, // DLL module handle
 static void
 natsLib_Destructor(void)
 {
+    int refs = 0;
+
     if (!(gLib.wasOpenedOnce))
         return;
 
@@ -251,6 +244,21 @@ natsLib_Destructor(void)
     nats_ReleaseThreadMemory();
 
     // Do the final cleanup if possible
+    natsMutex_Lock(gLib.lock);
+    refs = gLib.refs;
+    if (refs > 0)
+    {
+        // If some thread is still around when the process exits and has a
+        // reference to the library, then don't do the final cleanup now.
+        // If the process has not fully exited when the lib's last reference
+        // is decremented, the final cleanup will be executed from that thread.
+        gLib.finalCleanup = true;
+    }
+    natsMutex_Unlock(gLib.lock);
+
+    if (refs != 0)
+        return;
+
     _finalCleanup();
 }
 
@@ -309,48 +317,24 @@ _freeDlvWorkers(void)
     workers->workers = NULL;
 }
 
-static natsStatus
-_createLocale(void)
-{
-#ifdef _WIN32
-    gLib.locale = _create_locale(LC_ALL, "C");
-#else
-    gLib.locale = newlocale(LC_ALL_MASK, "C", (locale_t) 0);
-    if (gLib.locale == (locale_t) 0)
-        return NATS_NO_MEMORY;
-#endif
-    return NATS_OK;
-}
-
-static void
-_freeLocale(void)
-{
-    if (gLib.locale == NULL)
-        return;
-
-#ifdef _WIN32
-    _free_locale(gLib.locale);
-#else
-    freelocale(gLib.locale);
-#endif
-    gLib.locale = NULL;
-}
-
 static void
 _freeLib(void)
 {
+    const unsigned int offset = (unsigned int) offsetof(natsLib, refs);
+    bool               callFinalCleanup = false;
+
     _freeTimers();
     _freeAsyncCbs();
     _freeGC();
     _freeDlvWorkers();
     natsNUID_free();
-    _freeLocale();
 
     natsCondition_Destroy(gLib.cond);
 
-    memset(&(gLib.refs), 0, sizeof(natsLib) - ((char *)&(gLib.refs) - (char*)&gLib));
+    memset((void*) (offset + (char*)&gLib), 0, sizeof(natsLib) - offset);
 
     natsMutex_Lock(gLib.lock);
+    callFinalCleanup = gLib.finalCleanup;
     if (gLib.closeCompleteCond != NULL)
     {
         if (gLib.closeCompleteSignal)
@@ -364,7 +348,11 @@ _freeLib(void)
     }
     gLib.closed      = false;
     gLib.initialized = false;
+    gLib.finalCleanup= false;
     natsMutex_Unlock(gLib.lock);
+
+    if (callFinalCleanup)
+        _finalCleanup();
 }
 
 void
@@ -983,9 +971,9 @@ nats_Open(int64_t lockSpinCount)
     if (lockSpinCount >= 0)
         gLockSpinCount = lockSpinCount;
 
-    s = _createLocale();
-    if (s == NATS_OK)
-        s = natsCondition_Create(&(gLib.cond));
+    nats_Base32_Init();
+
+    s = natsCondition_Create(&(gLib.cond));
 
     if (s == NATS_OK)
         s = natsMutex_Create(&(gLib.timers.lock));
@@ -1342,8 +1330,11 @@ _updateStack(natsTLError *errTL, const char *funcName, natsStatus errSts,
     errTL->func[idx] = funcName;
 }
 
+#if !defined(_WIN32)
+__attribute__ ((format (printf, 5, 6)))
+#endif
 natsStatus
-nats_setErrorReal(const char *fileName, const char *funcName, int line, natsStatus errSts, const void *errTxtFmt, ...)
+nats_setErrorReal(const char *fileName, const char *funcName, int line, natsStatus errSts, const char *errTxtFmt, ...)
 {
     natsTLError *errTL  = _getTLError();
     char        tmp[256];
@@ -1381,8 +1372,11 @@ nats_setErrorReal(const char *fileName, const char *funcName, int line, natsStat
     return errSts;
 }
 
+#if !defined(_WIN32)
+__attribute__ ((format (printf, 4, 5)))
+#endif
 void
-nats_updateErrTxt(const char *fileName, const char *funcName, int line, const void *errTxtFmt, ...)
+nats_updateErrTxt(const char *fileName, const char *funcName, int line, const char *errTxtFmt, ...)
 {
     natsTLError *errTL  = _getTLError();
     char        tmp[256];
@@ -1818,7 +1812,7 @@ nats_SetMessageDeliveryPoolSize(int max)
     if (max <= 0)
     {
         natsMutex_Unlock(workers->lock);
-        return nats_setError(NATS_ERR, "Pool size cannot be negative or zero", "");
+        return nats_setError(NATS_ERR, "%s", "Pool size cannot be negative or zero");
     }
 
     // Do not error on max < workers->maxSize in case we allow shrinking
@@ -1890,7 +1884,7 @@ natsLib_msgDeliveryAssignWorker(natsSubscription *sub)
     if (workers->maxSize == 0)
     {
         natsMutex_Unlock(workers->lock);
-        return nats_setError(NATS_FAILED_TO_INITIALIZE, "Message delivery thread pool size is 0!", "");
+        return nats_setError(NATS_FAILED_TO_INITIALIZE, "%s", "Message delivery thread pool size is 0!");
     }
 
     worker = workers->workers[workers->idx];
@@ -1949,10 +1943,4 @@ natsLib_getMsgDeliveryPoolInfo(int *maxSize, int *size, int *idx, natsMsgDlvWork
     *idx = workers->idx;
     *workersArray = workers->workers;
     natsMutex_Unlock(workers->lock);
-}
-
-natsLocale
-natsLib_getLocale()
-{
-    return gLib.locale;
 }

@@ -1,5 +1,9 @@
 if(NOT BUILD_TESTING)
   return()
+endif()
+if(NOT NATS_BUILD_LIB_STATIC)
+   message("Building tests require static library")
+  return()
 endif()  
 
 # We need this to build the test program
@@ -8,7 +12,7 @@ if(NATS_BUILD_WITH_TLS)
   include_directories(${OPENSSL_INCLUDE_DIR})
 endif(NATS_BUILD_WITH_TLS)
 if(NATS_BUILD_STREAMING)
-  include_directories(${PROJECT_SOURCE_DIR}/pbuf/include)
+  include_directories(${NATS_PROTOBUF_INCLUDE_DIRS})
   include_directories(${PROJECT_SOURCE_DIR}/src/stan)
 endif(NATS_BUILD_STREAMING)
 
